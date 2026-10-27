@@ -1,0 +1,33 @@
+[package]
+name = "rebirth-ik"
+version = "0.1.0"
+description = "Inverse kinematics in safe Rust: FABRIK for arbitrary bone trees, analytic one/two-bone solvers, no_std, WebAssembly-ready. A rebirth of TheComet/ik."
+readme = "../../README.md"
+homepage = "https://markankamaransheogarat-sys.github.io/rebirth-ik/"
+documentation = "https://docs.rs/rebirth-ik"
+keywords = ["inverse-kinematics", "fabrik", "animation", "robotics", "skeleton"]
+categories = ["algorithms", "game-development", "no-std", "wasm", "mathematics"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+# Use the standard library's float functions. Disable for no_std (then enable `libm`).
+std = []
+# Software float math for no_std targets (microcontrollers, bare wasm).
+libm = ["dep:libm"]
+# Solve many independent chains in parallel (`solve_chains_par`).
+rayon = ["dep:rayon", "std"]
+
+[dependencies]
+libm = { version = "0.2", optional = true }
+rayon = { version = "1.10", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "solve"
+harness = false

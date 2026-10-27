@@ -1,0 +1,16 @@
+[package]
+name = "rebirth-ik-wasm"
+version = "0.1.0"
+description = "WebAssembly bindings and live demo for rebirth-ik"
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rebirth-ik = { path = "../rebirth-ik" }
+wasm-bindgen = "0.2"

@@ -1,0 +1,26 @@
+name: Release
+
+# Publishes to crates.io and creates a GitHub release when you push a tag like v0.1.0.
+# Requires the repository secret CARGO_REGISTRY_TOKEN (crates.io API token).
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --all-features
+      - name: Publish rebirth-ik to crates.io
+        run: cargo publish -p rebirth-ik
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

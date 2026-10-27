@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rebirth-ik — live demo</title>
+<meta name="description" content="Inverse kinematics in safe Rust compiled to WebAssembly: FABRIK for bone trees, analytic two-bone solver, joint limits.">
+<style>
+  :root {
+    --bg: #090b10; --panel: #11151d; --line: #222b3a; --text: #e6edf6; --dim: #8b98ab;
+    --acc: #4fd1c5; --acc2: #ff9f5a; --bad: #ff6b6b; --good: #7ee0a0;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+  body { min-height: 100vh; padding: 0 max(16px, env(safe-area-inset-right)) 28px max(16px, env(safe-area-inset-left)); }
+  a { color: var(--acc); text-decoration: none; } a:hover { text-decoration: underline; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; max-width: 1180px; margin: 0 auto; padding: 20px 0 10px; }
+  h1 { margin: 0; font: 700 22px var(--mono); letter-spacing: .02em; }
+  h1 span { color: var(--acc); }
+  .tag { color: var(--dim); flex: 1 1 320px; }
+  .links { font: 13px var(--mono); display: flex; gap: 14px; }
+  main { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; }
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+  .tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs button { flex: 0 0 auto; background: transparent; border: 1px solid transparent; color: var(--dim); padding: 7px 13px; border-radius: 9px; font: 600 13px var(--mono); cursor: pointer; }
+  .tabs button:hover { color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--bg); background: var(--acc); }
+  #cv { display: block; width: 100%; height: min(62vh, 560px); min-height: 340px; touch-action: none; cursor: crosshair; background: radial-gradient(ellipse at 50% 85%, #131a26, #090b10 70%); }
+  .hint { padding: 10px 14px; color: var(--dim); font-size: 13.5px; border-top: 1px solid var(--line); }
+  .hint b { color: var(--text); font-weight: 600; }
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .card h2 { margin: 0 0 10px; font: 700 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .stat { display: flex; justify-content: space-between; font: 14px var(--mono); padding: 3px 0; }
+  .stat b { color: var(--acc); font-weight: 600; }
+  .stat b.warn { color: var(--acc2); }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 10px 0 2px; }
+  label output { float: right; color: var(--text); font-family: var(--mono); }
+  input[type=range] { width: 100%; accent-color: var(--acc); }
+  input[type=range]:disabled { opacity: .35; }
+  .btn { width: 100%; margin-top: 10px; padding: 10px; background: #172030; color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: 600 13px var(--mono); cursor: pointer; }
+  .btn:hover { border-color: var(--acc); }
+  .btn:disabled { opacity: .5; cursor: progress; }
+  .result { margin-top: 10px; font: 13px var(--mono); color: var(--good); min-height: 20px; }
+  footer { max-width: 1180px; margin: 18px auto 0; color: var(--dim); font-size: 13px; }
+  #err { max-width: 1180px; margin: 0 auto 12px; color: var(--bad); display: none; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } #cv { height: 56vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>rebirth<span>-ik</span></h1>
+  <div class="tag">Inverse kinematics in safe Rust, running as WebAssembly in your browser.</div>
+  <div class="links"><a href="https://github.com/markankamaransheogarat-sys/rebirth-ik">GitHub</a><a href="https://docs.rs/rebirth-ik">docs.rs</a></div>
+</header>
+<div id="err"></div>
+<main>
+  <section class="stage">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <canvas id="cv"></canvas>
+    <div class="hint" id="hint"></div>
+  </section>
+  <aside>
+    <div class="card">
+      <h2>Solver</h2>
+      <div class="stat"><span>solve time</span><b id="s-time">–</b></div>
+      <div class="stat"><span>sweeps used</span><b id="s-sweeps">–</b></div>
+      <div class="stat"><span>tip error</span><b id="s-err">–</b></div>
+      <label for="iters">Max sweeps <output id="o-iters">20</output></label>
+      <input id="iters" type="range" min="1" max="40" value="20">
+      <label for="cone">Joint limit <output id="o-cone">off</output></label>
+      <input id="cone" type="range" min="0" max="90" value="0" step="5">
+      <label for="count" id="l-count" hidden>Chains <output id="o-count">120</output></label>
+      <input id="count" type="range" min="10" max="400" value="120" step="10" hidden>
+    </div>
+    <div class="card">
+      <h2>Benchmark in your browser</h2>
+      <div style="color:var(--dim);font-size:13px">100 000 chains × 10 bones × 20 sweeps, single thread.</div>
+      <button class="btn" id="bench">Run benchmark</button>
+      <div class="result" id="bench-out"></div>
+    </div>
+  </aside>
+</main>
+<footer>
+  MIT licensed. A Rust rewrite of <a href="https://github.com/TheComet/ik">TheComet/ik</a> (© 2017 Alex Murray, MIT) — thank you for the original ideas.
+  <span id="ver"></span>
+</footer>
+
+<script type="module">
+import init, { Rig, two_bone_solve, crowd_benchmark, version } from "./pkg/rebirth_ik_wasm.js";
+
+const $ = (id) => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const ptr = { x: 0, y: 0, down: false, moved: -1e9 };
+let W = 0, H = 0, dpr = 1;
+
+function resize() {
+  dpr = Math.min(2, devicePixelRatio || 1);
+  const r = cv.getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener("resize", resize);
+
+function pos(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); const p = pos(e); ptr.x = p.x; ptr.y = p.y; ptr.down = true; ptr.moved = performance.now(); scene.down && scene.down(p); });
+cv.addEventListener("pointermove", (e) => { const p = pos(e); ptr.x = p.x; ptr.y = p.y; ptr.moved = performance.now(); scene.move && scene.move(p); });
+cv.addEventListener("pointerup", () => { ptr.down = false; scene.up && scene.up(); });
+cv.addEventListener("pointercancel", () => { ptr.down = false; scene.up && scene.up(); });
+
+// ---------- drawing helpers ----------
+const lerp = (a, b, t) => a + (b - a) * t;
+function disc(x, y, r, fill, stroke) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); } }
+function line(x1, y1, x2, y2, w, col) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+function ring(x, y, r, col, w = 2) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.stroke(); }
+function cross(x, y, r, col) { line(x - r, y, x + r, y, 2, col); line(x, y - r, x, y + r, 2, col); }
+function ground(y) { ctx.strokeStyle = "#2a3446"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+// Draw a solved rig. View: screen = (ox + x*S, oy - y*S).
+function drawRig(rig, v, opts = {}) {
+  const p = rig.positions(), par = rig.parents(), n = par.length;
+  const depth = new Int32Array(n);
+  for (let i = 1; i < n; i++) depth[i] = depth[par[i]] + 1;
+  let maxd = 1; for (let i = 0; i < n; i++) maxd = Math.max(maxd, depth[i]);
+  for (let i = 1; i < n; i++) {
+    const a = par[i], t = depth[i] / maxd;
+    const x1 = v.ox + p[a * 2] * v.S, y1 = v.oy - p[a * 2 + 1] * v.S, x2 = v.ox + p[i * 2] * v.S, y2 = v.oy - p[i * 2 + 1] * v.S;
+    const w = (opts.thick ?? 9) * (1 - 0.62 * t);
+    line(x1, y1, x2, y2, w, opts.color ? opts.color(t) : `hsl(${lerp(175, 28, t)} 70% ${lerp(52, 62, t)}%)`);
+  }
+  if (opts.joints !== false) for (let i = 0; i < n; i++) disc(v.ox + p[i * 2] * v.S, v.oy - p[i * 2 + 1] * v.S, opts.jr ?? 3.4, "#0b0e14", "rgba(255,255,255,.55)");
+  return p;
+}
+
+// ---------- scenes ----------
+const lissa = (t, a, b) => ({ x: Math.sin(t * 0.7) * a, y: Math.sin(t * 1.1 + 1) * b });
+const idle = () => performance.now() - ptr.moved > 2500;
+
+const scenes = {};
+let lastSolve = { sweeps: 0, err: 0 };
+function doSolve(rig) { const sweeps = rig.solve(); lastSolve = { sweeps, err: rig.error() }; }
+
+scenes.tentacle = (() => {
+  let rig, v, tx = 0, ty = 2.5;
+  return {
+    title: "Tentacle", usesCone: true,
+    hint: "<b>FABRIK</b> on a 14-bone chain. Move the pointer. Raise <b>Joint limit</b> to see rotational constraints. Out-of-reach targets turn red and stretch the chain straight.",
+    init() { rig = Rig.chain(14, 0.26); this.rig = rig; resize(); },
+    free() { rig.free(); },
+    layout() { v = { S: Math.min(W / 7, H / 4.6), ox: W / 2, oy: H * 0.86 }; rig.set_root(0, 0); },
+    frame(t) {
+      this.layout();
+      if (idle()) { const l = lissa(t, 2.6, 1.5); tx = l.x; ty = 2.2 + l.y; }
+      else { tx = (ptr.x - v.ox) / v.S; ty = (v.oy - ptr.y) / v.S; }
+      rig.set_target(0, tx, ty);
+      doSolve(rig);
+      const reach = Math.hypot(tx, ty) <= 14 * 0.26 + 1e-3;
+      ground(v.oy + 14);
+      drawRig(rig, v, { thick: 12 });
+      const sx = v.ox + tx * v.S, sy = v.oy - ty * v.S;
+      ring(sx, sy, 11, reach ? "#4fd1c5" : "#ff6b6b"); cross(sx, sy, 5, reach ? "#4fd1c5" : "#ff6b6b");
+      return rig;
+    },
+  };
+})();
+
+scenes.human = (() => {
+  let rig, v, targets = [], drag = -1;
+  const names = ["head", "left hand", "right hand", "left foot", "right foot"];
+  const toScreen = (x, y) => ({ x: v.ox + x * v.S, y: v.oy - y * v.S });
+  return {
+    title: "Humanoid", usesCone: true,
+    hint: "A whole skeleton with <b>5 effectors</b> in one tree solve — spine and hips are shared. Drag the head, hands or feet.",
+    init() { rig = Rig.humanoid(1.0); this.rig = rig; targets = []; for (let i = 0; i < 5; i++) { const p = rig.effector_position(i); targets.push({ x: p[0], y: p[1] }); } },
+    free() { rig.free(); },
+    layout() { v = { S: Math.min(W / 3.4, H / 2.7), ox: W / 2, oy: H * 0.5 }; rig.set_root(0, 0); },
+    down(p) {
+      let best = -1, bd = 34;
+      targets.forEach((t, i) => { const s = toScreen(t.x, t.y), d = Math.hypot(s.x - p.x, s.y - p.y); if (d < bd) { bd = d; best = i; } });
+      drag = best;
+    },
+    move(p) { if (drag >= 0 && ptr.down) { targets[drag] = { x: (p.x - v.ox) / v.S, y: (v.oy - p.y) / v.S }; } },
+    up() { drag = -1; },
+    frame(t) {
+      this.layout();
+      if (idle() && drag < 0) { // gentle idle: hands sway
+        const base = [null, { x: -0.62, y: 0.9 }, { x: 0.62, y: 0.9 }];
+        for (let i = 1; i <= 2; i++) targets[i] = { x: base[i].x + Math.sin(t * 1.3 + i) * 0.12, y: base[i].y + Math.cos(t * 1.7 + i) * 0.1 };
+      }
+      targets.forEach((tg, i) => rig.set_target(i, tg.x, tg.y));
+      doSolve(rig);
+      ground(toScreen(0, -1.0).y);
+      drawRig(rig, v, { thick: 10 });
+      const ep = rig.effector_nodes(), pos = rig.positions();
+      targets.forEach((tg, i) => {
+        const s = toScreen(tg.x, tg.y), n = ep[i], hx = v.ox + pos[n * 2] * v.S, hy = v.oy - pos[n * 2 + 1] * v.S;
+        const miss = Math.hypot(hx - s.x, hy - s.y) > 6;
+        ring(s.x, s.y, drag === i ? 13 : 10, miss ? "#ff9f5a" : "#4fd1c5", drag === i ? 3 : 2);
+        if (miss) line(hx, hy, s.x, s.y, 1, "rgba(255,159,90,.5)");
+      });
+      // head
+      const hn = ep[0]; disc(v.ox + pos[hn * 2] * v.S, v.oy - pos[hn * 2 + 1] * v.S - 6, 15, "#101722", "#4fd1c5");
+      return rig;
+    },
+  };
+})();
+
+scenes.walker = (() => {
+  let rig, v, bx = 0, vx = 0, feet = [], rest = [], t0 = 0;
+  const LEGS = 6, GROUND = -0.32;
+  return {
+    title: "Walker", usesCone: true,
+    hint: "Procedural walking: move the pointer left and right. Feet stay planted until a leg is overstretched, then <b>step</b>. All six legs are one tree, solved together.",
+    init() {
+      rig = Rig.walker(LEGS, 1.0); this.rig = rig; bx = 0; vx = 0;
+      rest = []; feet = [];
+      for (let i = 0; i < LEGS; i++) { const p = rig.effector_position(i); rest.push({ dx: p[0], y: GROUND }); feet.push({ x: p[0], y: GROUND, from: null, to: null, t: 1 }); }
+    },
+    free() { rig.free(); },
+    layout() { v = { S: Math.min(W / 5.4, H / 3.2), ox: W / 2, oy: H * 0.62 }; },
+    frame(t, dt) {
+      this.layout();
+      const want = idle() ? Math.sin(t * 0.5) * 1.9 : Math.max(-2.2, Math.min(2.2, (ptr.x - v.ox) / v.S));
+      const prev = bx; bx = lerp(bx, want, 1 - Math.exp(-dt * 3)); vx = (bx - prev) / Math.max(dt, 1e-3);
+      const by = 0.1 + Math.sin(t * 7) * 0.012 * Math.min(1, Math.abs(vx));
+      rig.set_root(bx, by);
+      let stepping = feet.filter((f) => f.t < 1).length;
+      feet.forEach((f, i) => {
+        if (f.t < 1) {
+          f.t = Math.min(1, f.t + dt / 0.2);
+          const e = f.t * f.t * (3 - 2 * f.t);
+          f.x = lerp(f.from, f.to, e); f.y = GROUND + Math.sin(f.t * Math.PI) * 0.2;
+        } else {
+          const home = bx + rest[i].dx;
+          if (Math.abs(f.x - home) > 0.32 && stepping < 2) {
+            f.from = f.x; f.to = home + Math.sign(vx || (home - f.x)) * 0.18; f.t = 0; stepping++;
+          }
+        }
+        rig.set_target(i, f.x, f.y);
+      });
+      doSolve(rig);
+      ground(v.oy - GROUND * v.S);
+      // body
+      const bsx = v.ox + bx * v.S, bsy = v.oy - by * v.S;
+      drawRig(rig, v, { thick: 8, color: (tt) => `hsl(${lerp(175, 28, tt)} 62% 55%)` });
+      ctx.save(); ctx.translate(bsx, bsy); ctx.fillStyle = "#121a27"; ctx.strokeStyle = "#4fd1c5"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, -4, 46, 26, 0, 0, 6.2832); ctx.fill(); ctx.stroke();
+      disc(18, -8, 4, "#ff9f5a"); disc(30, -3, 3, "#ff9f5a"); ctx.restore();
+      return rig;
+    },
+  };
+})();
+
+scenes.twobone = (() => {
+  let v, target = { x: 0.9, y: 0.7 }, pole = { x: -0.3, y: 1.4 }, drag = null, last = [0, 0, 0, 0], nsPerSolve = 0;
+  const U = 0.9, L = 0.9;
+  const sc = (p) => ({ x: v.ox + p.x * v.S, y: v.oy - p.y * v.S });
+  return {
+    title: "Two-bone", usesCone: false,
+    hint: "The <b>analytic</b> solver (law of cosines): exact, no iterations. Drag the target (circle) and the <b>pole</b> (diamond) that decides which way the knee points.",
+    init() {
+      this.rig = null; resize();
+      const N = 20000, t = performance.now();
+      let s = 0; for (let i = 0; i < N; i++) { const r = two_bone_solve(0, 0, U, L, 0.4 + (i % 7) * 0.1, 0.5, 0, 2); s += r[0]; }
+      nsPerSolve = ((performance.now() - t) / N) * 1e6; this.sink = s;
+    },
+    free() {},
+    layout() { v = { S: Math.min(W / 4.4, H / 3.2), ox: W / 2, oy: H * 0.72 }; },
+    down(p) {
+      const a = sc(target), b = sc(pole);
+      drag = Math.hypot(a.x - p.x, a.y - p.y) < 30 ? "t" : Math.hypot(b.x - p.x, b.y - p.y) < 30 ? "p" : null;
+    },
+    move(p) { if (!drag || !ptr.down) return; const w = { x: (p.x - v.ox) / v.S, y: (v.oy - p.y) / v.S }; if (drag === "t") target = w; else pole = w; },
+    up() { drag = null; },
+    frame(t) {
+      this.layout();
+      if (idle() && !drag) { const l = lissa(t, 1.1, 0.6); target = { x: l.x, y: 0.5 + l.y }; }
+      const t0 = performance.now();
+      last = two_bone_solve(0, 0, U, L, target.x, target.y, pole.x, pole.y);
+      this.ms = performance.now() - t0;
+      ground(v.oy + 20);
+      const b = sc({ x: 0, y: 0 }), m = sc({ x: last[0], y: last[1] }), tip = sc({ x: last[2], y: last[3] });
+      line(b.x, b.y, m.x, m.y, 14, "hsl(175 70% 52%)"); line(m.x, m.y, tip.x, tip.y, 9, "hsl(28 80% 60%)");
+      [b, m, tip].forEach((q) => disc(q.x, q.y, 5, "#0b0e14", "rgba(255,255,255,.7)"));
+      const tt = sc(target), pp = sc(pole);
+      ring(tt.x, tt.y, 11, "#4fd1c5"); cross(tt.x, tt.y, 5, "#4fd1c5");
+      ctx.save(); ctx.translate(pp.x, pp.y); ctx.rotate(Math.PI / 4); ctx.strokeStyle = "#ff9f5a"; ctx.lineWidth = 2; ctx.strokeRect(-7, -7, 14, 14); ctx.restore();
+      line(m.x, m.y, pp.x, pp.y, 1, "rgba(255,159,90,.25)");
+      return null;
+    },
+    stats() { return { time: nsPerSolve.toFixed(0) + " ns", sweeps: "analytic", err: "0.000" }; },
+  };
+})();
+
+scenes.field = (() => {
+  let rigs = [], v, n = 120;
+  return {
+    title: "Field", usesCone: false, usesCount: true,
+    hint: "Hundreds of independent chains, every one solved <b>every frame</b> by the same WebAssembly module. They all reach for your pointer.",
+    init() { this.build(); },
+    build() { rigs.forEach((r) => r.free()); n = +$("count").value; rigs = []; for (let i = 0; i < n; i++) rigs.push(Rig.chain(9, 0.17 + (i % 5) * 0.012)); },
+    free() { rigs.forEach((r) => r.free()); rigs = []; },
+    layout() { v = { S: Math.min(W / 5.5, H / 3.2), ox: W / 2, oy: H * 0.9 }; },
+    frame(t) {
+      this.layout();
+      let tx, ty;
+      if (idle()) { const l = lissa(t, 2.4, 0.6); tx = l.x; ty = 1.7 + l.y; } else { tx = (ptr.x - v.ox) / v.S; ty = (v.oy - ptr.y) / v.S; }
+      const span = W / v.S * 0.98;
+      let totalErr = 0, sweeps = 0;
+      const it = +$("iters").value, t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        const r = rigs[i], bx = (i / (n - 1) - 0.5) * span;
+        r.set_iterations(it);
+        r.set_root(bx, 0);
+        const jx = Math.sin(i * 12.9898) * 0.35, jy = Math.cos(i * 78.233) * 0.25;
+        r.set_target(0, tx + jx, Math.max(0.2, ty + jy));
+        sweeps += r.solve();
+      }
+      this.ms = performance.now() - t0;
+      this.avgSweeps = sweeps / n;
+      for (let i = 0; i < n; i++) {
+        const k = i / (n - 1);
+        drawRig(rigs[i], v, { thick: 4.2, joints: false, color: (tt) => `hsl(${lerp(150, 330, k)} 65% ${lerp(40, 62, tt)}%)` });
+      }
+      cross(v.ox + tx * v.S, v.oy - ty * v.S, 7, "#ffffff");
+      ground(v.oy + 4);
+      return null;
+    },
+    stats() { return { time: (this.ms ?? 0).toFixed(2) + " ms", sweeps: (this.avgSweeps ?? 0).toFixed(1) + " avg", err: n + " chains" }; },
+  };
+})();
+
+// ---------- UI wiring ----------
+let scene = null, lastT = performance.now(), smoothMs = 0;
+const order = ["tentacle", "human", "walker", "twobone", "field"];
+
+function select(key) {
+  if (scene && scene.free) scene.free();
+  scene = scenes[key];
+  document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.k === key)));
+  $("hint").innerHTML = scene.hint;
+  $("cone").disabled = !scene.usesCone; $("cone").value = 0; $("o-cone").textContent = "off";
+  $("iters").disabled = key === "twobone";
+  $("count").hidden = $("l-count").hidden = !scene.usesCount;
+  resize();
+  scene.init();
+  applyControls();
+}
+function applyControls() {
+  const it = +$("iters").value, cone = +$("cone").value;
+  $("o-iters").textContent = it; $("o-cone").textContent = cone ? cone + "°" : "off";
+  if (scene.rig) { scene.rig.set_iterations(it); scene.rig.set_cone_degrees(cone); }
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  ctx.clearRect(0, 0, W, H);
+  const rig = scene.frame(now / 1000, dt);
+  let st;
+  if (scene.stats) st = scene.stats();
+  else if (rig) {
+    // time the solver alone: 40 full solves (all sweeps, no early exit) give a stable, non-zero cost
+    const reps = 40, t0 = performance.now();
+    rig.solve_fixed(reps);
+    const us = (performance.now() - t0) / reps * 1000;
+    smoothMs = lerp(smoothMs, us, 0.1);
+    st = { time: smoothMs.toFixed(1) + " µs", sweeps: lastSolve.sweeps, err: lastSolve.err.toFixed(3) };
+  }
+  if (st) { $("s-time").textContent = st.time; $("s-sweeps").textContent = st.sweeps; $("s-err").textContent = st.err; }
+  requestAnimationFrame(frame);
+}
+
+async function main() {
+  try { await init(); } catch (e) { const el = $("err"); el.style.display = "block"; el.textContent = "Could not load the WebAssembly module: " + e; return; }
+  $("ver").textContent = "rebirth-ik " + version();
+  const tabs = $("tabs");
+  order.forEach((k) => { const b = document.createElement("button"); b.textContent = scenes[k].title; b.dataset.k = k; b.setAttribute("role", "tab"); b.onclick = () => select(k); tabs.appendChild(b); });
+  $("iters").oninput = applyControls;
+  $("cone").oninput = applyControls;
+  $("count").oninput = () => { $("o-count").textContent = $("count").value; if (scene === scenes.field) { scene.build(); applyControls(); } };
+  $("bench").onclick = async () => {
+    const btn = $("bench"), out = $("bench-out"); btn.disabled = true; out.textContent = "running…";
+    await new Promise((r) => setTimeout(r, 30));
+    crowd_benchmark(2000, 20); // warm-up
+    const N = 100000, t0 = performance.now(); const chk = crowd_benchmark(N, 20); const ms = performance.now() - t0;
+    out.textContent = ms.toFixed(0) + " ms → " + (N / ms * 1000 / 1e6).toFixed(2) + " M chains/s" + (isFinite(chk) ? "" : " ?");
+    btn.disabled = false;
+  };
+  resize();
+  select("tentacle");
+  requestAnimationFrame(frame);
+}
+main();
+</script>
+</body>
+</html>
